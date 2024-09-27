@@ -19,8 +19,26 @@ from utils.evaluation import eval_bond_length
 from utils.transforms import get_atomic_number_from_index
 from utils.data import PDBProtein, ProteinLigandData, torchify_dict, parse_sdf_file
 from utils.reconstruct import fix_aromatic, fix_valence, MolReconsError
-from scripts.local.misc.extract_decompdiff import decompose_generated_ligand
 
+
+def decompose_generated_ligand(r):
+    mask = np.array(r['decomp_mask'])
+    mol = r['mol']
+    arms = []
+
+    for arm_idx in range(max(r['decomp_mask']) + 1):
+        atom_indices = np.where(mask == arm_idx)[0].tolist()
+        
+        arm = get_submol_from_mol(mol, atom_indices)
+        if arm is None:
+            print(f"[fail] to extract submol (arm).")
+            return None
+        smi = Chem.MolToSmiles(arm)
+        if "." in smi:
+            print(f"[fail] incompleted arm: {smi}")
+            return None 
+        arms.append(arm)
+    return arms
 
 def print_dict(d, logger):
     for k, v in d.items():
