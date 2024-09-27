@@ -20,6 +20,33 @@ from utils.transforms import get_atomic_number_from_index
 from utils.data import PDBProtein, ProteinLigandData, torchify_dict, parse_sdf_file
 from utils.reconstruct import fix_aromatic, fix_valence, MolReconsError
 
+def get_submol_from_mol(src_mol, atom_indices):
+
+    assert isinstance(src_mol, Chem.Mol)
+    positions = src_mol.GetConformer().GetPositions()
+
+    emol = Chem.RWMol()
+    id_map = {}
+    for i,a_id in enumerate(atom_indices):
+        emol.AddAtom(src_mol.GetAtomWithIdx(int(a_id)))
+        id_map[a_id] = i
+        
+    for bond in src_mol.GetBonds():
+        start = bond.GetBeginAtomIdx()
+        end = bond.GetEndAtomIdx()
+        if start in atom_indices and end in atom_indices:
+            emol.AddBond(id_map[start],id_map[end],bond.GetBondType())
+    
+    rdmol = emol.GetMol()
+
+    assert rdmol.GetNumAtoms() == positions[atom_indices].shape[0]
+    submol_pos = positions[atom_indices]
+    conf = Chem.Conformer(rdmol.GetNumAtoms())
+    for i in range(submol_pos.shape[0]):
+        conf.SetAtomPosition(i, submol_pos[i].tolist())
+    rdmol.AddConformer(conf, assignId=True)
+
+    return rdmol 
 
 def decompose_generated_ligand(r):
     mask = np.array(r['decomp_mask'])
