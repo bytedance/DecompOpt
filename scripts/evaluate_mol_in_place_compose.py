@@ -19,8 +19,53 @@ from utils.evaluation import eval_bond_length
 from utils.transforms import get_atomic_number_from_index
 from utils.data import PDBProtein, ProteinLigandData, torchify_dict, parse_sdf_file
 from utils.reconstruct import fix_aromatic, fix_valence, MolReconsError
-from scripts.local.misc.extract_decompdiff import decompose_generated_ligand
 
+def get_submol_from_mol(src_mol, atom_indices):
+
+    assert isinstance(src_mol, Chem.Mol)
+    positions = src_mol.GetConformer().GetPositions()
+
+    emol = Chem.RWMol()
+    id_map = {}
+    for i,a_id in enumerate(atom_indices):
+        emol.AddAtom(src_mol.GetAtomWithIdx(int(a_id)))
+        id_map[a_id] = i
+        
+    for bond in src_mol.GetBonds():
+        start = bond.GetBeginAtomIdx()
+        end = bond.GetEndAtomIdx()
+        if start in atom_indices and end in atom_indices:
+            emol.AddBond(id_map[start],id_map[end],bond.GetBondType())
+    
+    rdmol = emol.GetMol()
+
+    assert rdmol.GetNumAtoms() == positions[atom_indices].shape[0]
+    submol_pos = positions[atom_indices]
+    conf = Chem.Conformer(rdmol.GetNumAtoms())
+    for i in range(submol_pos.shape[0]):
+        conf.SetAtomPosition(i, submol_pos[i].tolist())
+    rdmol.AddConformer(conf, assignId=True)
+
+    return rdmol 
+
+def decompose_generated_ligand(r):
+    mask = np.array(r['decomp_mask'])
+    mol = r['mol']
+    arms = []
+
+    for arm_idx in range(max(r['decomp_mask']) + 1):
+        atom_indices = np.where(mask == arm_idx)[0].tolist()
+        
+        arm = get_submol_from_mol(mol, atom_indices)
+        if arm is None:
+            print(f"[fail] to extract submol (arm).")
+            return None
+        smi = Chem.MolToSmiles(arm)
+        if "." in smi:
+            print(f"[fail] incompleted arm: {smi}")
+            return None 
+        arms.append(arm)
+    return arms
 
 def print_dict(d, logger):
     for k, v in d.items():
